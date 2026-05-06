@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NEXUS — Stock Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #020408;
+    --panel: #060c14;
+    --border: #0d2535;
+    --border-glow: #0f4060;
+    --accent: #00d4ff;
+    --accent2: #00ff9d;
+    --accent3: #ff4060;
+    --accent4: #ff9d00;
+    --text: #c8e8f8;
+    --muted: #3a6070;
+    --up: #00ff9d;
+    --down: #ff4060;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    font-family: 'Rajdhani', sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    cursor: crosshair;
+  }
+
+  /* Animated scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,212,255,0.015) 2px,
+      rgba(0,212,255,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+    animation: scanlines 8s linear infinite;
+  }
+
+  @keyframes scanlines {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 100px; }
+  }
+
+  /* Animated grid background */
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: gridDrift 20s linear infinite;
+    pointer-events: none;
+    z-index: 0;
+  }
+  @keyframes gridDrift {
+    0% { transform: perspective(800px) rotateX(8deg) translateY(0); }
+    100% { transform: perspective(800px) rotateX(8deg) translateY(60px); }
+  }
+
+  /* Floating orbs */
+  .orb { position: fixed; border-radius: 50%; filter: blur(80px); pointer-events: none; z-index: 0; }
+  .orb1 { width: 400px; height: 400px; background: rgba(0,212,255,0.06); top: -100px; right: -100px; animation: orbFloat 12s ease-in-out infinite; }
+  .orb2 { width: 300px; height: 300px; background: rgba(0,255,157,0.05); bottom: 100px; left: -80px; animation: orbFloat 15s ease-in-out infinite reverse; }
+  .orb3 { width: 200px; height: 200px; background: rgba(255,64,96,0.04); top: 50%; left: 50%; animation: orbFloat 10s ease-in-out infinite 3s; }
+  @keyframes orbFloat {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-40px) scale(1.1); }
+  }
+
+  main { position: relative; z-index: 10; max-width: 1400px; margin: 0 auto; padding: 0 24px 40px; }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 0 20px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 30%;
+    height: 1px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  .logo {
+    font-family: 'Orbitron', monospace;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 6px;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(0,212,255,0.5);
+  }
+  .logo span { color: var(--text); opacity: 0.4; font-weight: 400; }
+
+  .header-right { display: flex; align-items: center; gap: 24px; }
+
+  .live-badge {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--accent2);
+    text-transform: uppercase;
+  }
+  .live-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent2);
+    box-shadow: 0 0 10px var(--accent2);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  #clock {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 2px;
+  }
+
+  /* Market summary bar */
+  .market-bar {
+    display: flex;
+    gap: 0;
+    margin: 20px 0;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+  }
+  .market-bar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(0,212,255,0.03), transparent 50%);
+    pointer-events: none;
+  }
+
+  .mbar-item {
+    flex: 1;
+    padding: 14px 20px;
+    border-right: 1px solid var(--border);
+    transition: background 0.3s;
+  }
+  .mbar-item:last-child { border-right: none; }
+  .mbar-item:hover { background: rgba(0,212,255,0.04); }
+
+  .mbar-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .mbar-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .mbar-chg { font-size: 12px; font-family: 'Share Tech Mono', monospace; margin-top: 2px; }
+
+  /* Main grid */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-top: 20px;
+  }
+
+  /* Stock card */
+  .stock-card {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.3s, transform 0.2s;
+  }
+  .stock-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .stock-card:hover { border-color: var(--border-glow); transform: translateY(-2px); }
+  .stock-card:hover::before { opacity: 1; }
+
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+  .ticker {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 2px;
+  }
+  .company { font-size: 12px; color: var(--muted); letter-spacing: 1px; margin-top: 2px; font-family: 'Share Tech Mono', monospace; }
+
+  .badge {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    padding: 4px 10px;
+    letter-spacing: 1px;
+    border: 1px solid;
+  }
+  .badge.up { color: var(--up); border-color: rgba(0,255,157,0.3); background: rgba(0,255,157,0.05); }
+  .badge.down { color: var(--down); border-color: rgba(255,64,96,0.3); background: rgba(255,64,96,0.05); }
+
+  .price {
+    font-family: 'Orbitron', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    transition: color 0.3s;
+  }
+  .price.flash-up { animation: flashUp 0.6s ease; }
+  .price.flash-down { animation: flashDown 0.6s ease; }
+  @keyframes flashUp { 0%,100%{color:var(--text)} 50%{color:var(--up)} }
+  @keyframes flashDown { 0%,100%{color:var(--text)} 50%{color:var(--down)} }
+
+  .change {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  .change.up { color: var(--up); }
+  .change.down { color: var(--down); }
+
+  /* Mini sparkline canvas */
+  .sparkline-wrap { margin: 16px 0 0; position: relative; height: 60px; }
+  .sparkline-wrap canvas { width: 100%; height: 100%; }
+
+  .card-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .stat { }
+  .stat-label { font-size: 10px; letter-spacing: 1px; color: var(--muted); font-family: 'Share Tech Mono', monospace; text-transform: uppercase; }
+  .stat-val { font-size: 13px; font-family: 'Share Tech Mono', monospace; color: var(--text); margin-top: 2px; }
+
+  /* Ticker tape */
+  .ticker-tape-wrap {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,212,255,0.02);
+    overflow: hidden;
+    padding: 10px 0;
+    margin-bottom: 20px;
+    position: relative;
+  }
+  .ticker-tape {
+    display: flex;
+    gap: 60px;
+    white-space: nowrap;
+    animation: tape 30s linear infinite;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+  }
+  @keyframes tape { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+  .tape-item { display: inline-flex; gap: 12px; }
+  .tape-sym { color: var(--accent); letter-spacing: 1px; }
+  .tape-price { color: var(--text); }
+  .tape-chg.up { color: var(--up); }
+  .tape-chg.down { color: var(--down); }
+
+  /* Section label */
+  .section-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 4px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--border), transparent); }
+
+  /* Volume bar */
+  .vol-bar-wrap { margin-top: 8px; height: 3px; background: rgba(255,255,255,0.05); }
+  .vol-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.8s ease; }
+
+  /* Search */
+  .search-row {
+    display: flex;
+    gap: 12px;
+    margin: 20px 0;
+    align-items: center;
+  }
+  .search-box {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 1px;
+    outline: none;
+    transition: border-color 0.3s;
+  }
+  .search-box::placeholder { color: var(--muted); }
+  .search-box:focus { border-color: var(--accent); }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 10px 20px;
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: background 0.2s, color 0.2s;
+  }
+  .btn:hover { background: rgba(0,212,255,0.1); }
+
+  /* Bottom panel: chart + watchlist */
+  .bottom-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-top: 20px;
+  }
+
+  .panel {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 20px;
+    position: relative;
+  }
+  .panel-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Watchlist */
+  .wl-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+    cursor: pointer;
+  }
+  .wl-row:last-child { border-bottom: none; }
+  .wl-row:hover { background: rgba(0,212,255,0.03); margin: 0 -20px; padding: 10px 20px; }
+  .wl-sym { font-family: 'Orbitron', monospace; font-size: 13px; color: var(--accent); letter-spacing: 1px; }
+  .wl-name { font-size: 11px; color: var(--muted); margin-top: 1px; font-family: 'Share Tech Mono', monospace; }
+  .wl-price { font-family: 'Share Tech Mono', monospace; font-size: 13px; text-align: right; }
+  .wl-chg { font-size: 11px; margin-top: 2px; text-align: right; font-family: 'Share Tech Mono', monospace; }
+
+  /* Corner decorators */
+  .corner-tl, .corner-br {
+    position: absolute;
+    width: 12px; height: 12px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: 0.5;
+  }
+  .corner-tl { top: 8px; left: 8px; border-width: 1px 0 0 1px; }
+  .corner-br { bottom: 8px; right: 8px; border-width: 0 1px 1px 0; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .bottom-grid { grid-template-columns: 1fr; }
+    .market-bar { flex-wrap: wrap; }
+    .mbar-item { flex: 1 1 calc(50% - 1px); }
+  }
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+
+<main>
+  <header>
+    <div class="logo">NEXUS <span>// MARKET</span></div>
+    <div class="header-right">
+      <div class="live-badge"><div class="live-dot"></div> LIVE DATA</div>
+      <div id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- Market bar -->
+  <div class="market-bar" id="market-bar">
+    <div class="mbar-item">
+      <div class="mbar-label">S&P 500</div>
+      <div class="mbar-val" id="sp-val">5,312.40</div>
+      <div class="mbar-chg up" id="sp-chg">▲ +0.84%</div>
+    </div>
+    <div class="mbar-item">
+      <div class="mbar-label">NASDAQ</div>
+      <div class="mbar-val" id="nq-val">16,742.19</div>
+      <div class="mbar-chg up" id="nq-chg">▲ +1.12%</div>
+    </div>
+    <div class="mbar-item">
+      <div class="mbar-label">DOW</div>
+      <div class="mbar-val" id="dj-val">38,904.57</div>
+      <div class="mbar-chg down" id="dj-chg">▼ −0.21%</div>
+    </div>
+    <div class="mbar-item">
+      <div class="mbar-label">VIX</div>
+      <div class="mbar-val" id="vix-val">14.32</div>
+      <div class="mbar-chg down" id="vix-chg">▼ −2.14%</div>
+    </div>
+    <div class="mbar-item">
+      <div class="mbar-label">BTC/USD</div>
+      <div class="mbar-val" id="btc-val">62,841</div>
+      <div class="mbar-chg up" id="btc-chg">▲ +2.34%</div>
+    </div>
+  </div>
+
+  <!-- Ticker tape -->
+  <div class="ticker-tape-wrap">
+    <div class="ticker-tape" id="tape"></div>
+  </div>
+
+  <!-- Search -->
+  <div class="search-row">
+    <input class="search-box" id="search" placeholder="SEARCH TICKER SYMBOL..." type="text"/>
+    <button class="btn" onclick="filterCards()">SCAN</button>
+    <button class="btn" onclick="resetFilter()">RESET</button>
+  </div>
+
+  <!-- Stocks grid -->
+  <div class="section-label">TRACKED ASSETS</div>
+  <div class="grid" id="stocks-grid"></div>
+
+  <!-- Bottom panel -->
+  <div class="bottom-grid">
+    <div class="panel" style="position:relative;">
+      <div class="corner-tl"></div>
+      <div class="corner-br"></div>
+      <div class="panel-title">INTRADAY CHART — <span id="chart-label">AAPL</span></div>
+      <div style="position:relative;height:220px;"><canvas id="main-chart"></canvas></div>
+    </div>
+    <div class="panel" style="position:relative;">
+      <div class="corner-tl"></div>
+      <div class="corner-br"></div>
+      <div class="panel-title">WATCHLIST</div>
+      <div id="watchlist"></div>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ─── DATA ────────────────────────────────────────────────────────────────────
+const STOCKS = [
+  { ticker:'AAPL', name:'APPLE INC',       price:189.42, chg:+1.24, vol:'58.2M', mkt:'3.01T', pe:'30.4', range:'183–199' },
+  { ticker:'MSFT', name:'MICROSOFT CORP',  price:415.72, chg:+2.18, vol:'22.1M', mkt:'3.09T', pe:'36.2', range:'402–430' },
+  { ticker:'NVDA', name:'NVIDIA CORP',     price:874.15, chg:+3.87, vol:'41.6M', mkt:'2.15T', pe:'72.8', range:'762–910' },
+  { ticker:'TSLA', name:'TESLA INC',       price:174.48, chg:-2.33, vol:'105M',  mkt:'554B',  pe:'48.1', range:'152–300' },
+  { ticker:'AMZN', name:'AMAZON.COM INC',  price:183.91, chg:+0.96, vol:'33.8M', mkt:'1.92T', pe:'60.5', range:'162–201' },
+  { ticker:'META', name:'META PLATFORMS',  price:499.10, chg:-0.72, vol:'14.2M', mkt:'1.27T', pe:'27.1', range:'458–542' },
+  { ticker:'GOOG', name:'ALPHABET INC',    price:175.34, chg:+1.55, vol:'25.9M', mkt:'2.19T', pe:'25.8', range:'161–194' },
+  { ticker:'AMD',  name:'ADV MICRO DEVIC', price:162.88, chg:+4.21, vol:'48.3M', mkt:'263B',  pe:'44.6', range:'134–228' },
+  { ticker:'NFLX', name:'NETFLIX INC',     price:627.44, chg:-1.18, vol:'5.8M',  mkt:'272B',  pe:'45.9', range:'542–700' },
+];
+
+const WATCHLIST = [
+  { sym:'INTC', name:'Intel Corp',       price:31.42,  chg:-1.82 },
+  { sym:'BRKB', name:'Berkshire Hathaway',price:392.60, chg:+0.34 },
+  { sym:'JPM',  name:'JPMorgan Chase',   price:201.85, chg:+0.88 },
+  { sym:'DIS',  name:'Walt Disney Co',   price:112.44, chg:-0.56 },
+  { sym:'PLTR', name:'Palantir Tech',    price:24.16,  chg:+5.32 },
+  { sym:'COIN', name:'Coinbase Global',  price:221.73, chg:+3.14 },
+];
+
+// ─── CLOCK ───────────────────────────────────────────────────────────────────
+function updateClock() {
+  const n = new Date();
+  document.getElementById('clock').textContent =
+    n.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ─── SPARKLINE DATA ───────────────────────────────────────────────────────────
+function genSparkData(base, vol=0.015, pts=40) {
+  const d = [base];
+  for (let i=1;i<pts;i++) d.push(+(d[i-1]*(1+(Math.random()-0.49)*vol)).toFixed(2));
+  return d;
+}
+
+const sparkData = {};
+STOCKS.forEach(s => sparkData[s.ticker] = genSparkData(s.price));
+
+// ─── TICKER TAPE ─────────────────────────────────────────────────────────────
+function buildTape() {
+  const all = [...STOCKS, ...WATCHLIST.map(w=>({ticker:w.sym,price:w.price,chg:w.chg}))];
+  const doubled = [...all,...all];
+  const tape = document.getElementById('tape');
+  tape.innerHTML = doubled.map(s=>`
+    <span class="tape-item">
+      <span class="tape-sym">${s.ticker}</span>
+      <span class="tape-price">$${s.price.toFixed(2)}</span>
+      <span class="tape-chg ${s.chg>=0?'up':'down'}">${s.chg>=0?'▲':'▼'} ${Math.abs(s.chg).toFixed(2)}%</span>
+    </span>
+  `).join('');
+}
+buildTape();
+
+// ─── DRAW SPARKLINE ───────────────────────────────────────────────────────────
+function drawSpark(canvas, data, isUp) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 200;
+  const H = canvas.offsetHeight || 60;
+  canvas.width = W; canvas.height = H;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const pts = data.map((v,i)=>({ x: (i/(data.length-1))*W, y: H - ((v-min)/range)*(H-8)-4 }));
+
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  const col = isUp ? 'rgba(0,255,157,' : 'rgba(255,64,96,';
+  grad.addColorStop(0, col+'0.2)');
+  grad.addColorStop(1, col+'0)');
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, H);
+  pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.lineTo(pts[pts.length-1].x, H);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  pts.forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.strokeStyle = isUp ? '#00ff9d' : '#ff4060';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// ─── STOCK CARDS ─────────────────────────────────────────────────────────────
+function buildCards(filter='') {
+  const grid = document.getElementById('stocks-grid');
+  const filtered = STOCKS.filter(s =>
+    s.ticker.includes(filter.toUpperCase()) ||
+    s.name.toLowerCase().includes(filter.toLowerCase())
+  );
+  grid.innerHTML = filtered.map(s => {
+    const up = s.chg >= 0;
+    const volPct = (Math.random()*60+20).toFixed(0);
+    return `
+    <div class="stock-card" onclick="showChart('${s.ticker}')">
+      <div class="corner-tl"></div>
+      <div class="corner-br"></div>
+      <div class="card-top">
+        <div>
+          <div class="ticker">${s.ticker}</div>
+          <div class="company">${s.name}</div>
+        </div>
+        <div class="badge ${up?'up':'down'}">${up?'▲ BUY':'▼ SELL'}</div>
+      </div>
+      <div class="price" id="price-${s.ticker}">$${s.price.toFixed(2)}</div>
+      <div class="change ${up?'up':'down'}" id="chg-${s.ticker}">
+        ${up?'▲':'-▼'} ${up?'+':''}${s.chg.toFixed(2)}%  ${up?'+':''}$${(s.price*Math.abs(s.chg)/100).toFixed(2)}
+      </div>
+      <div class="sparkline-wrap">
+        <canvas id="spark-${s.ticker}" width="200" height="60"></canvas>
+      </div>
+      <div style="margin-top:6px;">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);font-family:'Share Tech Mono',monospace;margin-bottom:4px;">
+          <span>VOLUME</span><span>${s.vol}</span>
+        </div>
+        <div class="vol-bar-wrap"><div class="vol-bar" style="width:${volPct}%"></div></div>
+      </div>
+      <div class="card-stats">
+        <div class="stat"><div class="stat-label">MKT CAP</div><div class="stat-val">${s.mkt}</div></div>
+        <div class="stat"><div class="stat-label">P/E</div><div class="stat-val">${s.pe}</div></div>
+        <div class="stat"><div class="stat-label">52W RANGE</div><div class="stat-val" style="font-size:11px">${s.range}</div></div>
+        <div class="stat"><div class="stat-label">SIGNAL</div><div class="stat-val" style="color:${up?'var(--up)':'var(--down)'};">${up?'BULLISH':'BEARISH'}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Draw sparklines after DOM update
+  requestAnimationFrame(()=>{
+    filtered.forEach(s=>{
+      const c = document.getElementById('spark-'+s.ticker);
+      if(c) drawSpark(c, sparkData[s.ticker], s.chg>=0);
+    });
+  });
+}
+
+// ─── WATCHLIST ────────────────────────────────────────────────────────────────
+function buildWatchlist() {
+  const wl = document.getElementById('watchlist');
+  wl.innerHTML = WATCHLIST.map(w => {
+    const up = w.chg >= 0;
+    return `<div class="wl-row" onclick="showChart('${w.sym}')">
+      <div>
+        <div class="wl-sym">${w.sym}</div>
+        <div class="wl-name">${w.name}</div>
+      </div>
+      <div>
+        <div class="wl-price">$${w.price.toFixed(2)}</div>
+        <div class="wl-chg ${up?'up':'down'}">${up?'▲':'-▼'} ${up?'+':''}${w.chg.toFixed(2)}%</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── MAIN CHART ───────────────────────────────────────────────────────────────
+let mainChart = null;
+
+function showChart(ticker) {
+  document.getElementById('chart-label').textContent = ticker;
+  const s = STOCKS.find(x=>x.ticker===ticker) || WATCHLIST.find(x=>x.sym===ticker);
+  const basePrice = s ? (s.price || s.price) : 100;
+  const data = genSparkData(basePrice, 0.008, 78);
+  const labels = Array.from({length:78},(_,i)=>{
+    const h = Math.floor(i/6)+9;
+    const m = (i%6)*5;
+    return `${h}:${m.toString().padStart(2,'0')}`;
+  });
+
+  if (mainChart) { mainChart.destroy(); mainChart = null; }
+  const ctx = document.getElementById('main-chart').getContext('2d');
+  const isUp = data[data.length-1] >= data[0];
+  const color = isUp ? '#00ff9d' : '#ff4060';
+
+  mainChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        data,
+        borderColor: color,
+        borderWidth: 1.5,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        pointHoverBackgroundColor: color,
+        fill: true,
+        backgroundColor: (c) => {
+          const g = c.chart.ctx.createLinearGradient(0,0,0,220);
+          g.addColorStop(0, isUp ? 'rgba(0,255,157,0.15)' : 'rgba(255,64,96,0.15)');
+          g.addColorStop(1, 'rgba(0,0,0,0)');
+          return g;
+        },
+        tension: 0.3,
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{
+          backgroundColor:'#060c14',
+          borderColor:'#0d2535',
+          borderWidth:1,
+          titleColor:'#00d4ff',
+          bodyColor:'#c8e8f8',
+          titleFont:{ family:'Share Tech Mono', size:10 },
+          bodyFont:{ family:'Share Tech Mono', size:12 },
+          callbacks:{ label: ctx => `  $${ctx.raw.toFixed(2)}` }
+        }
+      },
+      scales:{
+        x:{
+          ticks:{ color:'#3a6070', font:{family:'Share Tech Mono',size:9}, maxTicksLimit:10 },
+          grid:{ color:'rgba(13,37,53,0.8)' },
+          border:{ color:'#0d2535' }
+        },
+        y:{
+          position:'right',
+          ticks:{ color:'#3a6070', font:{family:'Share Tech Mono',size:10}, callback: v=>'$'+v.toFixed(0) },
+          grid:{ color:'rgba(13,37,53,0.8)' },
+          border:{ color:'#0d2535' }
+        }
+      }
+    }
+  });
+}
+
+// ─── LIVE PRICE SIMULATION ────────────────────────────────────────────────────
+function tickPrices() {
+  STOCKS.forEach(s=>{
+    const delta = (Math.random()-0.498)*0.3;
+    s.price = Math.max(1, +(s.price + delta).toFixed(2));
+    s.chg = +(s.chg + (Math.random()-0.5)*0.05).toFixed(2);
+
+    // Update sparkline data
+    sparkData[s.ticker].push(s.price);
+    sparkData[s.ticker].shift();
+
+    const priceEl = document.getElementById('price-'+s.ticker);
+    const chgEl = document.getElementById('chg-'+s.ticker);
+    if (priceEl) {
+      const prevText = priceEl.textContent;
+      const prevVal = parseFloat(prevText.replace('$',''));
+      priceEl.textContent = '$'+s.price.toFixed(2);
+      priceEl.classList.remove('flash-up','flash-down');
+      void priceEl.offsetWidth;
+      priceEl.classList.add(s.price >= prevVal ? 'flash-up' : 'flash-down');
+    }
+    if (chgEl) {
+      const up = s.chg >= 0;
+      chgEl.className = 'change '+(up?'up':'down');
+      chgEl.textContent = `${up?'▲':'-▼'} ${up?'+':''}${s.chg.toFixed(2)}%  ${up?'+':''}$${(s.price*Math.abs(s.chg)/100).toFixed(2)}`;
+    }
+
+    // Redraw sparkline
+    const spark = document.getElementById('spark-'+s.ticker);
+    if (spark) drawSpark(spark, sparkData[s.ticker], s.chg>=0);
+  });
+
+  // Tick index values
+  ['sp','nq','dj','vix','btc'].forEach(id=>{
+    const el = document.getElementById(id+'-val');
+    if (!el) return;
+    const cur = parseFloat(el.textContent.replace(/[$,]/g,''));
+    const next = +(cur * (1+(Math.random()-0.499)*0.001)).toFixed(id==='vix'?2:2);
+    el.textContent = id==='btc' ? next.toLocaleString() : next.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  });
+}
+
+// ─── SEARCH ───────────────────────────────────────────────────────────────────
+function filterCards() {
+  buildCards(document.getElementById('search').value);
+}
+function resetFilter() {
+  document.getElementById('search').value = '';
+  buildCards();
+}
+document.getElementById('search').addEventListener('keydown', e => { if(e.key==='Enter') filterCards(); });
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+buildCards();
+buildWatchlist();
+showChart('AAPL');
+setInterval(tickPrices, 1500);
+</script>
+</body>
+</html>
